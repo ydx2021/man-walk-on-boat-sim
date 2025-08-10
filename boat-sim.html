@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boat Movement Simulation - Correct Physics + Initial COM + Larger Boat</title>
+  <style>
+    body{
+      font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+      background:linear-gradient(135deg,#1a2a6c,#b21f1f,#1a2a6c);
+      color:#fff;margin:0;padding:20px;min-height:100vh;display:flex;flex-direction:column;align-items:center
+    }
+    .container{max-width:1000px;width:100%;background:rgba(0,0,30,.7);border-radius:15px;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,.5);backdrop-filter:blur(10px)}
+    h1{text-align:center;margin-top:0;text-shadow:0 2px 4px rgba(0,0,0,.5);color:#ffcc00}
+    .simulation-area{position:relative;height:300px;background:linear-gradient(to bottom,#1e5799,#2989d8,#1e5799);border-radius:10px;margin:20px 0;overflow:hidden;border:2px solid #0ff;box-shadow:inset 0 0 20px rgba(0,0,0,.5)}
+    .water{position:absolute;top:0;left:0;width:100%;height:100%;background:repeating-linear-gradient(0deg,rgba(30,87,153,.3),rgba(30,87,153,.3) 10px,rgba(41,137,216,.3) 10px,rgba(41,137,216,.3) 20px)}
+    .boat{position:absolute;top:50%;transform:translateY(-50%);width:360px;height:60px;background:linear-gradient(to right,#8B4513,#A0522D,#8B4513);border-radius:10px;box-shadow:0 5px 15px rgba(0,0,0,.5);border:2px solid #5D2906}
+    /* Boat center — small red circle fixed to the boat's middle */
+.boat-center-line{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);  /* center on boat midpoint */
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f03b30;               /* red */
+  border: 2px solid #ffffff;         /* thin white rim for contrast */
+  box-shadow: 0 0 8px rgba(255,59,48,0.9);
+  z-index: 11;                       /* above boat & man */
+  pointer-events: none;
+}
+
+    .man{position:absolute;top:50%;width:20px;height:40px;background:#3d0255;border-radius:50% 50% 0 0;transform:translateY(-50%);z-index:10}
+    .initial-marker{position:absolute;top:50%;width:2px;height:100%;background:#00ff00;transform:translateY(-50%);z-index:5} /* initial boat center */
+    /* Initial COM marker: small white circle at COM₀ */
+.initial-com-marker{
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%); /* center on its left x set by JS */
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  opacity: 0.5;
+  border: 2px solid rgba(0,0,0,.35);
+  box-shadow: 0 0 8px rgba(255,255,255,.85);
+  z-index: 8;
+  pointer-events: none;
+  display: none;
+}
+
+/* COM₀ label: centered above the dot */
+.initial-com-label{
+  position: absolute;
+  top: -22px;        /* above the dot */
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: #ffffff;
+  background: rgba(0,0,0,.35);
+  padding: 2px 6px;
+  border-radius: 6px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+
+    .com-marker{position:absolute;top:0;width:2px;height:100%;background:#ffea00;box-shadow:0 0 10px rgba(255,234,0,.9);z-index:6; display:none}
+    .com-label{position:absolute;top:6px;left:-9999px;font-size:12px;color:#ffea00;background:rgba(0,0,0,.35);padding:2px 6px;border-radius:6px;pointer-events:none;white-space:nowrap}
+    /* Velocity arrow (shows boat velocity) */
+    .velocity-arrow{position:absolute;top:26%;height:0;pointer-events:none;opacity:.95;z-index:7;transform-origin:center center;transition:opacity .15s}
+    .vel-shaft{position:absolute;top:-2px;left:0;height:4px;width:60px;background:#00ffff;box-shadow:0 0 8px rgba(0,255,255,.9)}
+    .vel-head{position:absolute;top:-8px;left:60px;width:0;height:0;border-top:8px solid transparent;border-bottom:8px solid transparent;border-left:12px solid #00ffff;filter:drop-shadow(0 0 6px rgba(0,255,255,.9))}
+    .vel-label{position:absolute;top:-22px;left:0;font-size:12px;color:#bffcff;background:rgba(0,0,0,.35);padding:2px 6px;border-radius:6px}
+    .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin:20px 0}
+    .control-group{background:rgba(0,20,40,.6);padding:15px;border-radius:10px;border:1px solid #0af}
+    .control-group h3{margin-top:0;color:#0ff;border-bottom:1px solid #0af;padding-bottom:8px}
+    .slider-container{margin:15px 0}
+    label{display:block;margin-bottom:5px;font-weight:500}
+    input[type=range]{width:100%;height:25px;-webkit-appearance:none;background:rgba(0,50,100,.5);border-radius:10px;outline:none}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:25px;height:25px;background:#0ff;border-radius:50%;cursor:pointer;box-shadow:0 0 10px rgba(0,255,255,.7)}
+    .value-display{display:inline-block;width:60px;text-align:right;font-weight:bold;color:#ffcc00}
+    .buttons{display:flex;justify-content:center;gap:15px;margin:20px 0}
+    button{padding:12px 25px;font-size:16px;font-weight:bold;background:linear-gradient(to bottom,#00c6ff,#0072ff);color:#fff;border:none;border-radius:50px;cursor:pointer;transition:all .3s;box-shadow:0 4px 8px rgba(0,0,0,.3)}
+    button:hover{transform:translateY(-3px);box-shadow:0 6px 12px rgba(0,0,0,.4);background:linear-gradient(to bottom,#00d2ff,#0080ff)}
+    button:active{transform:translateY(1px)}
+    .info-panel{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-top:20px}
+    .info-box{background:rgba(0,30,60,.6);padding:15px;border-radius:10px;border:1px solid #0af;text-align:center}
+    .info-box h3{margin:0 0 10px 0;color:#0ff}
+    .info-value{font-size:24px;font-weight:bold;color:#ffcc00}
+    .physics-explanation{margin-top:20px;padding:15px;background:rgba(0,20,40,.6);border-radius:10px;border:1px solid #0af}
+    .physics-explanation h3{color:#0ff;margin-top:0}
+    .wave{position:absolute;bottom:0;left:0;width:200%;height:20px;background:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none"><path d="M0,0V46.29c47.79,22.2,103.59,32.17,158,28,70.36-5.37,136.33-33.31,206.8-37.5C438.64,32.43,512.34,53.67,583,72.05c69.27,18,138.3,24.88,209.4,13.08,36.15-6,69.85-17.84,104.45-29.34C989.49,25,1113-14.29,1200,52.47V0Z" opacity=".25" fill="%2300ffff"/><path d="M0,0V15.81C13,36.92,27.64,56.86,47.69,72.05,99.41,111.27,165,111,224.58,91.58c31.15-10.15,60.09-26.07,89.67-39.8,40.92-19,84.73-46,130.83-49.67,36.26-2.85,70.9,9.42,98.6,31.56,31.77,25.39,62.32,62,103.63,73,40.44,10.79,81.35-6.69,119.13-24.28s75.16-39,116.92-43.05c59.73-5.85,113.28,22.88,168.9,38.84,30.2,8.66,59,6.17,87.09-7.5,22.43-10.89,48-26.93,60.65-49.24V0Z" opacity=".5" fill="%2300ffff"/><path d="M0,0V5.63C149.93,59,314.09,71.32,475.83,42.57c43-7.64,84.23-20.12,127.61-26.46,59-8.63,112.48,12.24,165.56,35.4C827.93,77.22,886,95.24,951.2,90c86.53-7,172.46-45.71,248.8-84.81V0Z" fill="%2300ffff"/></svg>');background-size:cover;background-repeat:repeat-x;animation:wave-animation 10s linear infinite;opacity:.7}
+    @keyframes wave-animation{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+    @media (max-width:768px){.controls{grid-template-columns:1fr}.info-panel{grid-template-columns:1fr}}
+    /* World-fixed bottom ruler */
+.ruler{
+  position:absolute; left:0; bottom:4px; height:26px; width:1000px; /* matches SIMULATION_WIDTH */
+  z-index:4; pointer-events:none;
+}
+.ruler .tick{
+  position:absolute; bottom:0; width:1px; background:#7fffd4; /* aqua */
+  height:10px; opacity:.7;
+}
+.ruler .tick.major{ height:18px; background:#00ffe0; box-shadow:0 0 6px rgba(0,255,224,.6); }
+.ruler .tick-label{
+  position:absolute; bottom:18px; transform:translateX(-50%);
+  font-size:11px; color:#e8ffff; background:rgba(0,0,0,.35);
+  padding:1px 4px; border-radius:4px; white-space:nowrap;
+}
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Boat Movement Simulation</h1>
+
+    <div class="simulation-area" id="simArea">
+      <div class="ruler" id="ruler"></div>
+
+      <div class="water"></div>
+      <div class="wave"></div>
+
+      <!-- Initial boat-center marker (world-fixed) -->
+      <div class="initial-marker" id="initialMarker" title="Initial boat center"></div>
+
+      <!-- Initial COM marker (world-fixed) -->
+      <div class="initial-com-marker" id="initialComMarker"><span class="initial-com-label" id="initialComLabel">COM₀</span></div>
+
+      <!-- Center of Mass marker (world, dynamic) -->
+      <div class="com-marker" id="comMarker"><span class="com-label" id="comLabel">COM</span></div>
+
+      <!-- Velocity arrow (shows v_b) -->
+      <div class="velocity-arrow" id="velocityArrow" aria-label="Boat velocity">
+        <div class="vel-shaft" id="velShaft"></div>
+        <div class="vel-head" id="velHead"></div>
+        <div class="vel-label">v<sub>b</sub></div>
+      </div>
+
+      <div class="boat" id="boat">
+        <!-- Boat-center marker (attached to boat) -->
+        <div class="boat-center-line" title="Boat center"></div>
+        <div class="man" id="man"></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="control-group">
+        <h3>Boat Parameters</h3>
+        <div class="slider-container">
+          <label for="massRatio">Boat/Man Mass Ratio: <span id="massRatioValue" class="value-display">5.0</span></label>
+          <input type="range" id="massRatio" min="1" max="20" step="0.1" value="5">
+        </div>
+        <div class="slider-container">
+          <label for="resistance">Resistance Coefficient (k): <span id="resistanceValue" class="value-display">0.5</span></label>
+          <input type="range" id="resistance" min="0.05" max="2" step="0.05" value="0.5">
+        </div>
+      </div>
+
+      <div class="control-group">
+        <h3>Man Parameters</h3>
+        <div class="slider-container">
+          <label for="manSpeed">Man Speed (m/s): <span id="manSpeedValue" class="value-display">2.0</span></label>
+          <input type="range" id="manSpeed" min="0.2" max="6" step="0.1" value="2">
+        </div>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="startBtn">Start Simulation</button>
+      <button id="resetBtn">Reset</button>
+      <button id="pauseBtn">Pause</button>
+    </div>
+
+    <div class="info-panel">
+      <div class="info-box">
+        <h3>Boat Speed</h3>
+        <div class="info-value" id="boatSpeed">0.00 m/s</div>
+      </div>
+      <div class="info-box">
+        <h3>Man Position (on deck)</h3>
+        <div class="info-value" id="manPosition">0.00 m</div>
+      </div>
+      <div class="info-box">
+        <h3>Boat Displacement</h3>
+        <div class="info-value" id="boatDisplacement">0.00 m</div>
+      </div>
+      <div class="info-box">
+        <h3>COM (world x)</h3>
+        <div class="info-value" id="comPosition">0.00 m</div>
+      </div>
+      <div class="info-box">
+        <h3>Simulation Time</h3>
+        <div class="info-value" id="simTime">0.00 s</div>
+      </div>
+    </div>
+
+    <div class="physics-explanation">
+      <h3>Physics in this sim</h3>
+      <ul>
+        <li>During walking, \(v_{\text{rel}}=v_m-v_b\) is constant; boat &amp; man share the same acceleration.</li>
+        <li>External force is drag on the boat: \(F=-k\,v_b\Rightarrow a_b=-(k/(M+m))\,v_b\).</li>
+        <li>Start: \(v_b(0^+)=-\frac{m}{M+m}v_{\text{rel}}\). Stop: \(v_b\leftarrow v_b+\frac{m}{M+m}v_{\text{rel}}\).</li>
+        <li>COM (yellow) moves only because drag is external; white line is initial COM (COM₀).</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    // === DOM ===
+    const simArea = document.getElementById('simArea');
+    const boat = document.getElementById('boat');
+    const man = document.getElementById('man');
+    const startBtn = document.getElementById('startBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const massRatioSlider = document.getElementById('massRatio');
+    const resistanceSlider = document.getElementById('resistance');
+    const manSpeedSlider = document.getElementById('manSpeed');
+    const massRatioValue = document.getElementById('massRatioValue');
+    const resistanceValue = document.getElementById('resistanceValue');
+    const manSpeedValue = document.getElementById('manSpeedValue');
+    const boatSpeedDisplay = document.getElementById('boatSpeed');
+    const manPositionDisplay = document.getElementById('manPosition');
+    const boatDisplacementDisplay = document.getElementById('boatDisplacement');
+    const comPositionDisplay = document.getElementById('comPosition');
+    const simTimeDisplay = document.getElementById('simTime');
+    const initialMarker = document.getElementById('initialMarker');
+
+    const initialComMarker = document.getElementById('initialComMarker');
+    const initialComLabel  = document.getElementById('initialComLabel');
+    const comMarker = document.getElementById('comMarker');
+    const comLabel = document.getElementById('comLabel');
+
+    // Velocity arrow parts
+    const velocityArrow = document.getElementById('velocityArrow');
+    const velShaft = document.getElementById('velShaft');
+    const velHead = document.getElementById('velHead');
+
+    // === Parameters ===
+    let manMass = 70; // kg (relative scale)
+    let boatMassRatio = parseFloat(massRatioSlider.value);
+    let boatMass = manMass * boatMassRatio;
+    let resistanceCoeff = parseFloat(resistanceSlider.value);
+    let manSpeed = parseFloat(manSpeedSlider.value); // desired v_rel (px/s)
+
+    // Velocity arrow tuning
+    const VEL_ARROW_SCALE = 60;  // px per (px/s)
+    const VEL_ARROW_MAX   = 160; // px cap
+    const VEL_HIDE_EPS    = 0.01;
+
+    // === State ===
+    let boatPosition = 0;    // world, px
+    let boatVelocity = 0;    // world, px/s
+    let manRelX = 0;         // on deck, px (from bow offset)
+    let walking = false;
+    let manAtEnd = false;
+    let simulationTime = 0;
+    let isRunning = false;
+    let isPaused = false;
+    let animationId = null;
+    let startedWalk = false;
+    let vRel = 0;            // locked-in walking speed (px/s)
+    let initialCOMWorld = 0; // stores COM at t=0 for current params
+
+    // === Geometry ===
+    const BOAT_LENGTH = 360;     // px (larger boat)
+    const MAN_WIDTH = 20;        // px
+    const SIMULATION_WIDTH = 1000; // px (layout baseline)
+    const DT = 1/60;             // s
+    const BOAT_START_X = (SIMULATION_WIDTH - BOAT_LENGTH) / 2;
+    const BOW_OFFSET = 10;       // px: man starts 10px from bow
+    const STERN_OFFSET = 10;     // px: stop 10px before stern
+    const INITIAL_BOAT_CENTER = BOAT_START_X + BOAT_LENGTH/2;
+
+    // === UI init ===
+    massRatioValue.textContent = boatMassRatio.toFixed(1);
+    resistanceValue.textContent = resistanceCoeff.toFixed(2);
+    manSpeedValue.textContent = manSpeed.toFixed(1);
+
+    massRatioSlider.addEventListener('input', () => {
+      boatMassRatio = parseFloat(massRatioSlider.value);
+      boatMass = manMass * boatMassRatio;
+      massRatioValue.textContent = boatMassRatio.toFixed(1);
+      if (!isRunning) updateInitialCOMMarker(); // reflect new mass split before start
+    });
+    resistanceSlider.addEventListener('input', () => {
+      resistanceCoeff = parseFloat(resistanceSlider.value);
+      resistanceValue.textContent = resistanceCoeff.toFixed(2);
+    });
+    manSpeedSlider.addEventListener('input', () => {
+      manSpeed = parseFloat(manSpeedSlider.value);
+      manSpeedValue.textContent = manSpeed.toFixed(1);
+    });
+
+    function initPositions() {
+      boat.style.left = BOAT_START_X + 'px';
+      man.style.left = (BOW_OFFSET + 0) + 'px';
+      boatPosition = 0;
+      boatVelocity = 0;
+      manRelX = 0;
+      walking = false;
+      manAtEnd = false;
+      startedWalk = false;
+      vRel = 0;
+      simulationTime = 0;
+      isPaused = false;
+
+      // Mark initial boat center
+      initialMarker.style.left = INITIAL_BOAT_CENTER + 'px';
+
+      // Compute & place initial COM for current params
+      updateInitialCOMMarker();
+
+      updateCOMMarker();       // dynamic COM (same as COM₀ at t=0)
+      updateDisplays();
+      updateVelocityArrow();   // hidden at zero
+    }
+
+    function computeInitialCOMX() {
+      const boatLeftWorld = BOAT_START_X; // boatPosition=0 at init
+      const boatCenterWorld = boatLeftWorld + BOAT_LENGTH/2;
+      const manCenterWorld  = boatLeftWorld + (BOW_OFFSET + MAN_WIDTH/2);
+      const M = boatMass, m = manMass;
+      return (M*boatCenterWorld + m*manCenterWorld) / (M+m);
+    }
+
+    function updateInitialCOMMarker() {
+      initialCOMWorld = computeInitialCOMX();
+      initialComMarker.style.left = initialCOMWorld + 'px';
+      initialComLabel.style.left  = (initialCOMWorld + 6) + 'px';
+      initialComLabel.textContent = 'COM₀';
+    }
+
+    // === Controls ===
+    startBtn.addEventListener('click', () => {
+      if (!isRunning) {
+        isRunning = true;
+        isPaused = false;
+        startBtn.textContent = 'Restart';
+        // Lock parameters at start
+        boatMass = manMass * parseFloat(massRatioSlider.value);
+        resistanceCoeff = parseFloat(resistanceSlider.value);
+        vRel = parseFloat(manSpeedSlider.value);
+        walking = true;
+
+        // Recompute COM₀ exactly at start (in case user changed sliders)
+        updateInitialCOMMarker();
+
+        if (!startedWalk) {
+          const totalMass = boatMass + manMass;
+          boatVelocity = - (manMass / totalMass) * vRel; // v_b(0+)
+          startedWalk = true;
+        }
+        animate();
+      } else if (isPaused) {
+        isPaused = false;
+        pauseBtn.textContent = 'Pause';
+        animate();
+      } else {
+        // Restart
+        cancelAnimationFrame(animationId);
+        initPositions();
+        isRunning = true;
+        boatMass = manMass * parseFloat(massRatioSlider.value);
+        resistanceCoeff = parseFloat(resistanceSlider.value);
+        vRel = parseFloat(manSpeedSlider.value);
+        walking = true;
+        startedWalk = true;
+        boatVelocity = - (manMass / (boatMass + manMass)) * vRel;
+        animate();
+      }
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      if (isRunning && !isPaused) {
+        isPaused = true;
+        pauseBtn.textContent = 'Resume';
+        cancelAnimationFrame(animationId);
+      } else if (isRunning && isPaused) {
+        isPaused = false;
+        pauseBtn.textContent = 'Pause';
+        animate();
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      isRunning = false;
+      isPaused = false;
+      cancelAnimationFrame(animationId);
+      startBtn.textContent = 'Start Simulation';
+      pauseBtn.textContent = 'Pause';
+      initPositions();
+    });
+
+    // === Main Loop ===
+    function animate() {
+      if (isPaused) return;
+      stepPhysics(DT);
+      render();
+      updateDisplays();
+      if (isRunning && !isPaused) {
+        animationId = requestAnimationFrame(animate);
+      }
+    }
+
+    // === Physics ===
+    function stepPhysics(dt) {
+      simulationTime += dt;
+
+      // Walking constraint
+      if (walking && !manAtEnd) {
+        manRelX += vRel * dt;
+
+        // Reached stern?
+        const maxRel = BOAT_LENGTH - STERN_OFFSET - MAN_WIDTH - BOW_OFFSET;
+        if (manRelX >= maxRel) {
+          manRelX = maxRel;
+          manAtEnd = true;
+          walking = false;
+
+          // Instant stick with momentum conserved
+          boatVelocity += (manMass / (boatMass + manMass)) * vRel;
+          vRel = 0;
+        }
+      }
+
+      // Drag on boat → accelerates the coupled system
+      const totalMass = boatMass + manMass;
+      const boatAcceleration = (-resistanceCoeff * boatVelocity) / totalMass;
+
+      // Integrate
+      boatVelocity += boatAcceleration * dt;
+      boatPosition += boatVelocity * dt;
+    }
+
+    // === Render ===
+    function render() {
+      // Boat world x
+      boat.style.left = (BOAT_START_X + boatPosition) + 'px';
+
+      // Man inside boat (relative to deck)
+      man.style.left = (BOW_OFFSET + manRelX) + 'px';
+
+      // Markers
+      updateCOMMarker();
+      updateVelocityArrow();
+    }
+
+    function updateCOMMarker() {
+        const totalMass = boatMass + manMass;
+
+        const boatLeftWorld = BOAT_START_X + boatPosition;
+        const boatCenterWorld = boatLeftWorld + BOAT_LENGTH / 2;
+
+        const manCenterInBoat = (BOW_OFFSET + manRelX) + MAN_WIDTH / 2;
+        const manCenterWorld = boatLeftWorld + manCenterInBoat;
+
+        // COM in world pixels (from left edge)
+        const xCOMWorld = (boatMass * boatCenterWorld + manMass * manCenterWorld) / totalMass;
+
+        // --- convert to ruler coordinate: 0 at INITIAL_BOAT_CENTER ---
+        const xCOMRuler = xCOMWorld - INITIAL_BOAT_CENTER;
+
+        // Draw the vertical line at the correct world x
+        comMarker.style.left = xCOMWorld + 'px';
+        comLabel.style.left = (xCOMWorld + 6) + 'px';
+        comLabel.textContent = 'COM';
+
+        // Show the ruler-based value
+        comPositionDisplay.textContent = xCOMRuler.toFixed(2) + ' m';
+      }
+
+
+    function updateVelocityArrow() {
+      const boatCenterWorld = BOAT_START_X + boatPosition + BOAT_LENGTH/2;
+      const mag = Math.abs(boatVelocity);
+      const length = Math.min(VEL_ARROW_MAX, mag * VEL_ARROW_SCALE);
+      const show = length > VEL_HIDE_EPS ? 1 : 0;
+
+      velocityArrow.style.left = boatCenterWorld + 'px';
+      velocityArrow.style.transform = `translateX(-50%) ${boatVelocity < 0 ? 'rotate(180deg)' : ''}`;
+      velocityArrow.style.opacity = show ? 0.95 : 0;
+
+      velShaft.style.width = `${Math.max(0, length - 12)}px`; // space for head
+      velHead.style.left = `${Math.max(0, length - 12)}px`;
+    }
+
+    function updateDisplays() {
+      boatSpeedDisplay.textContent = boatVelocity.toFixed(2) + ' m/s';
+      manPositionDisplay.textContent = manRelX.toFixed(2) + ' m';
+      boatDisplacementDisplay.textContent = boatPosition.toFixed(2) + ' m';
+      simTimeDisplay.textContent = simulationTime.toFixed(2) + ' s';
+    }
+
+    // === Init ===
+    initPositions();
+    const ruler = document.getElementById('ruler');
+function buildRuler() {
+  // keep ruler width consistent with our world coords
+  ruler.style.width = SIMULATION_WIDTH + 'px';
+  ruler.innerHTML = '';
+
+  const MINOR = 20;     // px per minor tick
+  const MAJOR = 100;    // px per major tick (labeled)
+  const origin = INITIAL_BOAT_CENTER; // 0 at initial boat center
+
+  for (let x = 0; x <= SIMULATION_WIDTH; x += MINOR) {
+    const t = document.createElement('div');
+    const isMajor = (x % MAJOR === 0);
+    t.className = 'tick' + (isMajor ? ' major' : '');
+    t.style.left = x + 'px';
+    ruler.appendChild(t);
+
+    if (isMajor) {
+      const lab = document.createElement('div');
+      lab.className = 'tick-label';
+      const val = x - origin;             // world distance from boat center at t=0
+      lab.textContent = (val >= 0 ? '+' : '') + val + ' m';
+      lab.style.left = x + 'px';
+      ruler.appendChild(lab);
+    }
+  }
+}
+buildRuler();
+
+
+
+  </script>
+</body>
+</html>
